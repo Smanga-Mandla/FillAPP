@@ -1,0 +1,75 @@
+# ==============================
+# Dependencies
+# ==============================
+node_modules/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ==============================
+# Build Output
+# ==============================
+client/dist/
+dist/
+build/
+output/
+
+# ==============================
+# Large Files / Documents
+# ==============================
+*.pdf
+*.zip
+*.rar
+*.7z
+*.tar
+*.gz
+*.exe
+*.msi
+
+# ==============================
+# Data / Uploads
+# ==============================
+students/
+Downloads/
+uploads/
+*.csv
+*.xlsx
+
+# ==============================
+# Environment / Secrets
+# ==============================
+.env
+.env.local
+*.env
+
+# ==============================
+# Logs
+# ==============================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ==============================
+# OS Files
+# ==============================
+.DS_Store
+Thumbs.db
+
+# ==============================
+# IDE / Editor
+# ==============================
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ==============================
+# Coverage / Testing
+# ==============================
+coverage/
+.pytest_cache/
+
