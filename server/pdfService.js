@@ -30,10 +30,24 @@ export function toPdfCoords(pageHeight, x, y, height) {
 export async function generatePdfs(fields, mappings, rows, headers) {
   ensureOutputDir();
   const formBytes = getFormBuffer();
+
+  // --- sanitize input rows: remove fully-empty rows and exact duplicates ---
+  const normalize = (r) => (r || []).map((c) => (c == null ? '' : String(c).trim()));
+  const rowsNorm = (rows || []).map(normalize);
+  const nonEmptyRows = rowsNorm.filter((r) => r.some((c) => c !== ''));
+  const uniqueRows = nonEmptyRows.filter((r, idx, arr) => {
+    return idx === arr.findIndex((p) => p.length === r.length && p.every((v, i) => v === r[i]));
+  });
+
+  if ((rows || []).length !== uniqueRows.length) {
+    console.log(`Filtered rows: original=${(rows || []).length}, afterFilter=${uniqueRows.length}`);
+  }
+
   const results = [];
 
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
+  // iterate over filtered unique rows (preserves original ordering of first occurrences)
+  for (let i = 0; i < uniqueRows.length; i++) {
+    const row = uniqueRows[i];
     const pdfDoc = await PDFDocument.load(formBytes);
     const pages = pdfDoc.getPages();
 
