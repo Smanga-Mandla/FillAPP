@@ -70,14 +70,23 @@ export async function generatePdfs(fields, mappings, rows, headers) {
 
     const gender =
       genderIndex >= 0 && row[genderIndex] != null
-        ? String(row[genderIndex]).trim().toUpperCase()
+        ? String(row[genderIndex]).trim()
         : '';
+
+    // normalize common gender values into canonical 'MALE'|'FEMALE'
+    const normalizedGender = (() => {
+      const g = String(gender || '').trim().toUpperCase();
+      if (!g) return '';
+      if (/^(M|MALE|MAN|BOY)$/.test(g)) return 'MALE';
+      if (/^(F|FEMALE|WOMAN|GIRL)$/.test(g)) return 'FEMALE';
+      return g;
+    })();
 
     const isBelow35 =
       age !== null && !isNaN(age) && age < 35;
 
     console.log('Age:', age);
-    console.log('Gender:', gender);
+    console.log('Gender(raw):', gender, 'normalized:', normalizedGender);
     console.log('Below35:', isBelow35);
 
     // ==========================================
@@ -140,8 +149,13 @@ export async function generatePdfs(fields, mappings, rows, headers) {
       // AUTO GENDER
       // =====================================
 
-      if (fieldId === 'gender_male') {
-        if (gender === 'MALE') {
+      const isGenderMaleField =
+        fieldId === 'gender_male' ||
+        fieldLabel === 'gender_male' ||
+        /\bmale\b/.test(fieldLabel);
+
+      if (isGenderMaleField) {
+        if (normalizedGender === 'MALE') {
           page.drawText('X', {
             x: x + 2,
             y: pdfY + field.height / 2 - 6,
@@ -151,8 +165,13 @@ export async function generatePdfs(fields, mappings, rows, headers) {
         continue;
       }
 
-      if (fieldId === 'gender_female') {
-        if (gender === 'FEMALE') {
+      const isGenderFemaleField =
+        fieldId === 'gender_female' ||
+        fieldLabel === 'gender_female' ||
+        /\bfemale\b/.test(fieldLabel);
+
+      if (isGenderFemaleField) {
+        if (normalizedGender === 'FEMALE') {
           page.drawText('X', {
             x: x + 2,
             y: pdfY + field.height / 2 - 6,

@@ -1,24 +1,25 @@
 import { generatePdfs } from './pdfService.js';
 
-// Small smoke test for the "Below 35" yes/no proximity logic
+// Combined smoke test for Below 35 proximity logic and Gender auto-fill
 (async () => {
   const fields = [
-    // label that indicates "Below 35" (text field)
+    // Below 35 label + yes/no checkboxes
     { id: 'f_below', page: 1, x: 100, y: 200, width: 120, height: 12, label: 'Below 35', type: 'text' },
-    // a "Yes" checkbox drawn to the right of the label (should be detected as below35_yes)
     { id: 'f_yes', page: 1, x: 260, y: 200, width: 12, height: 12, label: 'Yes', type: 'checkbox' },
-    // a "No" checkbox drawn to the right of the label as well
     { id: 'f_no', page: 1, x: 300, y: 200, width: 12, height: 12, label: 'No', type: 'checkbox' },
+
+    // gender checkboxes (IDs required: gender_male, gender_female)
+    { id: 'gender_male', page: 1, x: 100, y: 240, width: 12, height: 12, label: 'Male', type: 'checkbox' },
+    { id: 'gender_female', page: 1, x: 140, y: 240, width: 12, height: 12, label: 'Female', type: 'checkbox' },
   ];
 
   const mappings = [];
 
-  const headers = ['AGE'];
+  const headers = ['AGE', 'GENDER'];
   const rows = [
-    // age < 35 -> should mark the Yes box
-    ['34'],
-    // age >= 35 -> should mark the No box
-    ['35'],
+    ['34', 'Male'],    // Below35 -> Yes, Gender -> Male
+    ['35', 'Female'],  // Below35 -> No, Gender -> Female
+    ['28', 'f'],       // Below35 -> Yes, Gender -> F (should map to Female)
   ];
 
   try {
