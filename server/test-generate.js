@@ -8,6 +8,10 @@ import { generatePdfs } from './pdfService.js';
     { id: 'f_yes', page: 1, x: 260, y: 200, width: 12, height: 12, label: 'Yes', type: 'checkbox' },
     { id: 'f_no', page: 1, x: 300, y: 200, width: 12, height: 12, label: 'No', type: 'checkbox' },
 
+    // single region named `below35` (new): covers printed 'Yes'/'No' so OCR/text-extract
+    // can find and X the correct choice based on AGE
+    { id: 'below35', page: 1, x: 244, y: 192, width: 168, height: 36, label: 'below35', type: 'text' },
+
     // gender checkboxes (IDs required: gender_male, gender_female)
     { id: 'gender_male', page: 1, x: 100, y: 240, width: 12, height: 12, label: 'Male', type: 'checkbox' },
     { id: 'gender_female', page: 1, x: 140, y: 240, width: 12, height: 12, label: 'Female', type: 'checkbox' },

@@ -115,7 +115,106 @@ export async function generatePdfs(fields, mappings, rows, headers) {
       // =====================================
       // AUTO BELOW 35 (match by id OR label)
       // - allows user-drawn fields named `below35_yes`, `Below 35 - Yes`, etc.
+      // - supports a single region field named `below35` that contains the
+      //   printed choices (PDF text extraction + OCR fallback)
       // =====================================
+
+      // REGION: single `below35` region — read page text inside the rectangle
+      if (fieldId === 'below35' || fieldLabel === 'below35') {
+        try {
+          const pdfjsLib = await import('pdfjs-dist/build/pdf.mjs');
+          const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(formBytes) });
+          const pdfjsDoc = await loadingTask.promise;
+          const pdfjsPage = await pdfjsDoc.getPage(field.page);
+          const viewport = pdfjsPage.getViewport({ scale: 1 });
+          const textContent = await pdfjsPage.getTextContent();
+
+          const items = (textContent.items || []).map((it) => {
+            const tx = (it.transform && it.transform[4]) || 0;
+            const ty = (it.transform && it.transform[5]) || 0;
+            return { str: String(it.str || ''), x: tx, y: ty };
+          });
+
+          // pdfjs y is bottom-based; convert stored field top-left y to bottom-based
+          const pageHeightCss = viewport.height;
+          const fieldBottomY = pageHeightCss - field.y - field.height;
+
+          const hits = items.filter((it) =>
+            it.x >= field.x - 1 &&
+            it.x <= field.x + field.width + 1 &&
+            it.y >= fieldBottomY - 1 &&
+            it.y <= fieldBottomY + field.height + 1
+          );
+
+          const foundText = hits.map((h) => h.str).join(' ').toLowerCase();
+          let hasYes = /\byes\b/.test(foundText);
+          let hasNo = /\bno\b/.test(foundText);
+
+          // If PDF has no selectable text in the region, fall back to OCR (native Tesseract)
+          if (!foundText) {
+            try {
+              const tmpDir = os.tmpdir();
+              const outPrefix = path.join(tmpDir, `form_page_${field.page}_${Date.now()}_${Math.random().toString(36).slice(2,6)}`);
+
+              // pdftoppm -r 72 -png -f <page> -l <page> <input.pdf> <outPrefix>
+              await execFileP('pdftoppm', ['-r', '72', '-png', '-f', String(field.page), '-l', String(field.page), FORM_PATH, outPrefix]);
+              const pngPath = outPrefix + '.png';
+
+              // tesseract <image> stdout -l eng tsv
+              const { stdout } = await execFileP('tesseract', [pngPath, 'stdout', '-l', 'eng', 'tsv'], { maxBuffer: 10 * 1024 * 1024 });
+
+              const lines = (stdout || '').trim().split(/\r?\n/).slice(1);
+              const words = lines.map((ln) => {
+                const cols = ln.split('\t');
+                return {
+                  text: (cols[11] || '').trim(),
+                  left: Number(cols[6]) || 0,
+                  top: Number(cols[7]) || 0,
+                  width: Number(cols[8]) || 0,
+                  height: Number(cols[9]) || 0,
+                };
+              }).filter(w => w.text);
+
+              const wordsInField = words.filter(w =>
+                w.left >= field.x - 2 &&
+                w.left <= field.x + field.width + 2 &&
+                w.top >= field.y - 2 &&
+                w.top <= field.y + field.height + 2
+              );
+
+              const joined = wordsInField.map(w => w.text).join(' ').toLowerCase();
+              hasYes = /\byes\b/.test(joined);
+              hasNo = /\bno\b/.test(joined);
+
+              try { fs.unlinkSync(pngPath); } catch (e) { /* ignore */ }
+            } catch (ocrErr) {
+              console.log('OCR fallback failed for below35 (pdftoppm/tesseract):', ocrErr?.message || ocrErr);
+            }
+          }
+
+          if (isBelow35 && hasYes) {
+            const yesItem = hits.find((h) => /\byes\b/i.test(h.str));
+            const drawAtX = yesItem ? Math.max(field.x + 2, yesItem.x - 6) : field.x + 2;
+            page.drawText('X', {
+              x: drawAtX,
+              y: pdfY + field.height / 2 - 6,
+              size: 12,
+            });
+          } else if (!isBelow35 && hasNo) {
+            const noItem = hits.find((h) => /\bno\b/i.test(h.str));
+            const drawAtX = noItem ? Math.max(field.x + 2, noItem.x - 6) : field.x + 2;
+            page.drawText('X', {
+              x: drawAtX,
+              y: pdfY + field.height / 2 - 6,
+              size: 12,
+            });
+          }
+        } catch (err) {
+          console.log('below35 region text-extract failed:', err?.message || err);
+        }
+
+        continue;
+      }
 
       const isBelow35YesField =
         fieldId === 'below35_yes' ||
