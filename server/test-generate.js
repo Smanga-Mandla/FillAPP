@@ -11,6 +11,10 @@ import { generatePdfs } from './pdfService.js';
     // gender checkboxes (IDs required: gender_male, gender_female)
     { id: 'gender_male', page: 1, x: 100, y: 240, width: 12, height: 12, label: 'Male', type: 'checkbox' },
     { id: 'gender_female', page: 1, x: 140, y: 240, width: 12, height: 12, label: 'Female', type: 'checkbox' },
+
+    // single region named `gender` (new): covers printed labels 'Male'/'Female' so
+    // the code can read the text in that rectangle and mark the matching option.
+    { id: 'gender', page: 1, x: 90, y: 236, width: 120, height: 24, label: 'gender', type: 'text' },
   ];
 
   const mappings = [];

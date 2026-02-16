@@ -2,6 +2,10 @@ import { PDFDocument, rgb } from 'pdf-lib';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import os from 'os';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+const execFileP = promisify(execFile);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -147,7 +151,115 @@ export async function generatePdfs(fields, mappings, rows, headers) {
 
       // =====================================
       // AUTO GENDER
+      // - supports explicit fields `gender_male` / `gender_female`
+      // - supports a single region field named `gender` that contains the printed
+      //   labels (uses PDF text-extraction when available; no OCR install needed
+      //   for digital/selectable PDFs)
       // =====================================
+
+      // REGION: single `gender` region field — read page text inside the rectangle
+      if (fieldId === 'gender' || fieldLabel === 'gender') {
+        try {
+          const pdfjsLib = await import('pdfjs-dist/build/pdf.mjs');
+          const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(formBytes) });
+          const pdfjsDoc = await loadingTask.promise;
+          const pdfjsPage = await pdfjsDoc.getPage(field.page);
+          const viewport = pdfjsPage.getViewport({ scale: 1 });
+          const textContent = await pdfjsPage.getTextContent();
+
+          const items = (textContent.items || []).map((it) => {
+            const tx = (it.transform && it.transform[4]) || 0;
+            const ty = (it.transform && it.transform[5]) || 0;
+            return { str: String(it.str || ''), x: tx, y: ty };
+          });
+
+          // pdfjs y is bottom-based; convert stored field top-left y to bottom-based
+          const pageHeightCss = viewport.height;
+          const fieldBottomY = pageHeightCss - field.y - field.height;
+
+          const hits = items.filter((it) =>
+            it.x >= field.x - 1 &&
+            it.x <= field.x + field.width + 1 &&
+            it.y >= fieldBottomY - 1 &&
+            it.y <= fieldBottomY + field.height + 1
+          );
+
+          const foundText = hits.map((h) => h.str).join(' ').toLowerCase();
+          let hasMale = /\bmale\b/.test(foundText);
+          let hasFemale = /\bfemale\b/.test(foundText);
+
+          // If PDF has no selectable text in the region, fall back to OCR (native Tesseract)
+          if (!foundText) {
+            try {
+              // render page -> PNG (72 DPI) using `pdftoppm` (Poppler) then run `tesseract` -> TSV
+              const tmpDir = os.tmpdir();
+              const outPrefix = path.join(tmpDir, `form_page_${field.page}_${Date.now()}_${Math.random().toString(36).slice(2,6)}`);
+
+              // pdftoppm -r 72 -png -f <page> -l <page> <input.pdf> <outPrefix>
+              await execFileP('pdftoppm', ['-r', '72', '-png', '-f', String(field.page), '-l', String(field.page), FORM_PATH, outPrefix]);
+              const pngPath = outPrefix + '.png';
+
+              // tesseract <image> stdout -l eng tsv
+              const { stdout } = await execFileP('tesseract', [pngPath, 'stdout', '-l', 'eng', 'tsv'], { maxBuffer: 10 * 1024 * 1024 });
+
+              // parse TSV (columns: level, page_num, block_num, par_num, line_num, word_num, left, top, width, height, conf, text)
+              const lines = (stdout || '').trim().split(/\r?\n/).slice(1);
+              const words = lines.map((ln) => {
+                const cols = ln.split('\t');
+                return {
+                  text: (cols[11] || '').trim(),
+                  left: Number(cols[6]) || 0,
+                  top: Number(cols[7]) || 0,
+                  width: Number(cols[8]) || 0,
+                  height: Number(cols[9]) || 0,
+                };
+              }).filter(w => w.text);
+
+              // tesseract top/left coordinates use top-left origin; our field.x/field.y use points with top-left origin (72 DPI mapping)
+              const wordsInField = words.filter(w =>
+                w.left >= field.x - 2 &&
+                w.left <= field.x + field.width + 2 &&
+                w.top >= field.y - 2 &&
+                w.top <= field.y + field.height + 2
+              );
+
+              const joined = wordsInField.map(w => w.text).join(' ').toLowerCase();
+              hasMale = /\bmale\b/.test(joined);
+              hasFemale = /\bfemale\b/.test(joined);
+
+              // cleanup temp image
+              try { fs.unlinkSync(pngPath); } catch (e) { /* ignore */ }
+            } catch (ocrErr) {
+              // binaries not available or failed — log and continue (explicit gender_{male,female} fields still work)
+              console.log('OCR fallback failed (pdftoppm/tesseract):', ocrErr?.message || ocrErr);
+            }
+          }
+
+          if (normalizedGender === 'MALE' && hasMale) {
+            const maleItem = hits.find((h) => /\bmale\b/i.test(h.str));
+            const drawAtX = (maleItem && maleItem.x) ? Math.max(field.x + 2, maleItem.x - 6) : field.x + 2;
+            page.drawText('X', {
+              x: drawAtX,
+              y: pdfY + field.height / 2 - 6,
+              size: 12,
+            });
+          }
+
+          if (normalizedGender === 'FEMALE' && hasFemale) {
+            const femaleItem = hits.find((h) => /\bfemale\b/i.test(h.str));
+            const drawAtX = (femaleItem && femaleItem.x) ? Math.max(field.x + 2, femaleItem.x - 6) : field.x + 2;
+            page.drawText('X', {
+              x: drawAtX,
+              y: pdfY + field.height / 2 - 6,
+              size: 12,
+            });
+          }
+        } catch (err) {
+          console.log('gender region text-extract failed:', err?.message || err);
+        }
+
+        continue;
+      }
 
       const isGenderMaleField =
         fieldId === 'gender_male' ||
